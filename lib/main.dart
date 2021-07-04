@@ -1,5 +1,4 @@
 import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:random_string/random_string.dart';
@@ -156,6 +155,7 @@ class _MyHomePageState extends State<MyHomePage> {
               child: Container(
                 height: 600,
                 child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     ElevatedButton(
                       onPressed: _movement,
