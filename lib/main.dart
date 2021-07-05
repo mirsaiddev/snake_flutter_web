@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:random_string/random_string.dart';
 
+import 'gameOverTextIndexes.dart';
+
 enum SnakeDirection { DOWN, UP, LEFT, RIGHT }
+enum KeyboardType { physicalKey, isKeyPressed, logicalKey }
 
 void main() {
   runApp(MyApp());
@@ -28,12 +31,23 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   int _numbersOfTotalSquares = 900;
+  int _foodIndex;
+  int _speed = 250;
 
   List<int> _snakePositionIndexes = [];
+  List<int> _barrierPositionIndexes = [];
 
   SnakeDirection _currentSnakeDirection;
 
+  KeyboardType _keyboardType = KeyboardType.isKeyPressed;
+
   FocusNode focusNode = FocusNode();
+
+  Timer _timer;
+
+  bool _snakeIsRed = false;
+  bool _gameOver = false;
+  bool _gameStarted = false;
 
   void _createSnakeAtRandomPosition() {
     int _randomDirection = randomBetween(0, 3);
@@ -94,8 +108,28 @@ class _MyHomePageState extends State<MyHomePage> {
     setState(() {});
   }
 
+  void _createRandomFood() {
+    _foodIndex = null;
+    int _verticalPosition = randomBetween(4, 26);
+    int _horizontalPosition = randomBetween(4, 26);
+    _foodIndex = _verticalPosition * 30 + _horizontalPosition;
+    if (_snakePositionIndexes.contains(_foodIndex)) {
+      _createRandomFood();
+    }
+  }
+
+  void _createRandomBarrier() {
+    int _verticalPosition = randomBetween(4, 26);
+    int _horizontalPosition = randomBetween(4, 26);
+    int _barrierIndex = _verticalPosition * 30 + _horizontalPosition;
+    _barrierPositionIndexes.add(_barrierIndex);
+    if (_snakePositionIndexes.contains(_barrierIndex)) {
+      _createRandomBarrier();
+    }
+  }
+
   void _movement() {
-    Timer.periodic(Duration(milliseconds: 300), (Timer timer) {
+    _timer = Timer.periodic(Duration(milliseconds: 300), (Timer timer) async {
       switch (_currentSnakeDirection) {
         case SnakeDirection.DOWN:
           if (_snakePositionIndexes.last > 870) {
@@ -103,7 +137,6 @@ class _MyHomePageState extends State<MyHomePage> {
           } else {
             _snakePositionIndexes.add(_snakePositionIndexes.last + 30);
           }
-          _snakePositionIndexes.removeAt(0);
           break;
 
         case SnakeDirection.UP:
@@ -112,7 +145,6 @@ class _MyHomePageState extends State<MyHomePage> {
           } else {
             _snakePositionIndexes.add(_snakePositionIndexes.last - 30);
           }
-          _snakePositionIndexes.removeAt(0);
           break;
 
         case SnakeDirection.LEFT:
@@ -121,7 +153,6 @@ class _MyHomePageState extends State<MyHomePage> {
           } else {
             _snakePositionIndexes.add(_snakePositionIndexes.last - 1);
           }
-          _snakePositionIndexes.removeAt(0);
           break;
 
         case SnakeDirection.RIGHT:
@@ -130,17 +161,63 @@ class _MyHomePageState extends State<MyHomePage> {
           } else {
             _snakePositionIndexes.add(_snakePositionIndexes.last + 1);
           }
-          _snakePositionIndexes.removeAt(0);
           break;
+      }
+      if (_isFoodEaten()) {
+        _createRandomFood();
+        _createRandomBarrier();
+        _speed--;
+        _timer.cancel();
+        _movement();
+      } else {
+        _snakePositionIndexes.removeAt(0);
+      }
+      if (_isGameOver()) {
+        _timer.cancel();
+        _snakeIsRed = true;
+        int _length = _snakePositionIndexes.length;
+        int _speed = (2000 / _length).round();
+        for (var i = 0; i < _length; i++) {
+          await Future.delayed(Duration(milliseconds: _speed));
+          _snakePositionIndexes.removeAt(0);
+          setState(() {});
+        }
+        _gameOver = true;
       }
       setState(() {});
     });
+  }
+
+  bool _isFoodEaten() {
+    if (_snakePositionIndexes.last == _foodIndex) {
+      return true;
+    }
+    return false;
+  }
+
+  bool _isGameOver() {
+    if (_snakePositionIndexes.any((element) => _barrierPositionIndexes.contains(element))) {
+      return true;
+    }
+    for (var i = 0; i < _snakePositionIndexes.length; i++) {
+      int _count = 0;
+      for (var j = 0; j < _snakePositionIndexes.length; j++) {
+        if (_snakePositionIndexes[i] == _snakePositionIndexes[j]) {
+          _count += 1;
+        }
+        if (_count == 2) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   @override
   void initState() {
     super.initState();
     _createSnakeAtRandomPosition();
+    _createRandomFood();
   }
 
   @override
@@ -158,10 +235,31 @@ class _MyHomePageState extends State<MyHomePage> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     ElevatedButton(
-                      onPressed: _movement,
+                      onPressed: () {
+                        _movement();
+                        _gameStarted = true;
+                      },
                       child: Text('Start'),
                       style: ButtonStyle(),
                     ),
+                    ElevatedButton(
+                      onPressed: () {
+                        if (_keyboardType == KeyboardType.isKeyPressed) {
+                          _keyboardType = KeyboardType.logicalKey;
+                        } else if (_keyboardType == KeyboardType.logicalKey) {
+                          _keyboardType = KeyboardType.physicalKey;
+                        } else if (_keyboardType == KeyboardType.physicalKey) {
+                          _keyboardType = KeyboardType.isKeyPressed;
+                        }
+                        setState(() {});
+                      },
+                      child: Text(_keyboardType.toString()),
+                      style: ButtonStyle(),
+                    ),
+                    Text(
+                      'Skor : ${_snakePositionIndexes.length - 4}\nHız : $_speed',
+                      style: TextStyle(color: Colors.white),
+                    )
                   ],
                 ),
               ),
@@ -171,24 +269,130 @@ class _MyHomePageState extends State<MyHomePage> {
             autofocus: true,
             focusNode: focusNode,
             onKey: (RawKeyEvent event) {
-              if (event.data.logicalKey == LogicalKeyboardKey.arrowDown) {
-                if (_currentSnakeDirection != SnakeDirection.UP) {
-                  _currentSnakeDirection = SnakeDirection.DOWN;
+              if (_keyboardType == KeyboardType.isKeyPressed) {
+                if (event.isKeyPressed(LogicalKeyboardKey.keyS)) {
+                  if (_currentSnakeDirection != SnakeDirection.UP) {
+                    _currentSnakeDirection = SnakeDirection.DOWN;
+                  }
                 }
-              }
-              if (event.data.logicalKey == LogicalKeyboardKey.arrowLeft) {
-                if (_currentSnakeDirection != SnakeDirection.RIGHT) {
-                  _currentSnakeDirection = SnakeDirection.LEFT;
+                if (event.isKeyPressed(LogicalKeyboardKey.keyA)) {
+                  if (_currentSnakeDirection != SnakeDirection.RIGHT) {
+                    _currentSnakeDirection = SnakeDirection.LEFT;
+                  }
                 }
-              }
-              if (event.data.logicalKey == LogicalKeyboardKey.arrowRight) {
-                if (_currentSnakeDirection != SnakeDirection.LEFT) {
-                  _currentSnakeDirection = SnakeDirection.RIGHT;
+                if (event.isKeyPressed(LogicalKeyboardKey.keyD)) {
+                  if (_currentSnakeDirection != SnakeDirection.LEFT) {
+                    _currentSnakeDirection = SnakeDirection.RIGHT;
+                  }
                 }
-              }
-              if (event.data.logicalKey == LogicalKeyboardKey.arrowUp) {
-                if (_currentSnakeDirection != SnakeDirection.DOWN) {
-                  _currentSnakeDirection = SnakeDirection.UP;
+                if (event.isKeyPressed(LogicalKeyboardKey.keyW)) {
+                  if (_currentSnakeDirection != SnakeDirection.DOWN) {
+                    _currentSnakeDirection = SnakeDirection.UP;
+                  }
+                }
+
+                if (event.isKeyPressed(LogicalKeyboardKey.arrowDown)) {
+                  if (_currentSnakeDirection != SnakeDirection.UP) {
+                    _currentSnakeDirection = SnakeDirection.DOWN;
+                  }
+                }
+                if (event.isKeyPressed(LogicalKeyboardKey.arrowLeft)) {
+                  if (_currentSnakeDirection != SnakeDirection.RIGHT) {
+                    _currentSnakeDirection = SnakeDirection.LEFT;
+                  }
+                }
+                if (event.isKeyPressed(LogicalKeyboardKey.arrowRight)) {
+                  if (_currentSnakeDirection != SnakeDirection.LEFT) {
+                    _currentSnakeDirection = SnakeDirection.RIGHT;
+                  }
+                }
+                if (event.isKeyPressed(LogicalKeyboardKey.arrowUp)) {
+                  if (_currentSnakeDirection != SnakeDirection.DOWN) {
+                    _currentSnakeDirection = SnakeDirection.UP;
+                  }
+                }
+              } else if (_keyboardType == KeyboardType.logicalKey) {
+                if (event.data.logicalKey == LogicalKeyboardKey.arrowDown) {
+                  if (_currentSnakeDirection != SnakeDirection.UP) {
+                    _currentSnakeDirection = SnakeDirection.DOWN;
+                  }
+                }
+                if (event.data.logicalKey == LogicalKeyboardKey.arrowLeft) {
+                  if (_currentSnakeDirection != SnakeDirection.RIGHT) {
+                    _currentSnakeDirection = SnakeDirection.LEFT;
+                  }
+                }
+                if (event.data.logicalKey == LogicalKeyboardKey.arrowRight) {
+                  if (_currentSnakeDirection != SnakeDirection.LEFT) {
+                    _currentSnakeDirection = SnakeDirection.RIGHT;
+                  }
+                }
+                if (event.data.logicalKey == LogicalKeyboardKey.arrowUp) {
+                  if (_currentSnakeDirection != SnakeDirection.DOWN) {
+                    _currentSnakeDirection = SnakeDirection.UP;
+                  }
+                }
+                if (event.data.logicalKey == LogicalKeyboardKey.keyS) {
+                  if (_currentSnakeDirection != SnakeDirection.UP) {
+                    _currentSnakeDirection = SnakeDirection.DOWN;
+                  }
+                }
+                if (event.data.logicalKey == LogicalKeyboardKey.keyA) {
+                  if (_currentSnakeDirection != SnakeDirection.RIGHT) {
+                    _currentSnakeDirection = SnakeDirection.LEFT;
+                  }
+                }
+                if (event.data.logicalKey == LogicalKeyboardKey.keyD) {
+                  if (_currentSnakeDirection != SnakeDirection.LEFT) {
+                    _currentSnakeDirection = SnakeDirection.RIGHT;
+                  }
+                }
+                if (event.data.logicalKey == LogicalKeyboardKey.keyW) {
+                  if (_currentSnakeDirection != SnakeDirection.DOWN) {
+                    _currentSnakeDirection = SnakeDirection.UP;
+                  }
+                }
+              } else if (_keyboardType == KeyboardType.physicalKey) {
+                if (event.data.physicalKey == PhysicalKeyboardKey.keyS) {
+                  if (_currentSnakeDirection != SnakeDirection.UP) {
+                    _currentSnakeDirection = SnakeDirection.DOWN;
+                  }
+                }
+                if (event.data.physicalKey == PhysicalKeyboardKey.keyA) {
+                  if (_currentSnakeDirection != SnakeDirection.RIGHT) {
+                    _currentSnakeDirection = SnakeDirection.LEFT;
+                  }
+                }
+                if (event.data.physicalKey == PhysicalKeyboardKey.keyD) {
+                  if (_currentSnakeDirection != SnakeDirection.LEFT) {
+                    _currentSnakeDirection = SnakeDirection.RIGHT;
+                  }
+                }
+                if (event.data.physicalKey == PhysicalKeyboardKey.keyW) {
+                  if (_currentSnakeDirection != SnakeDirection.DOWN) {
+                    _currentSnakeDirection = SnakeDirection.UP;
+                  }
+                }
+
+                if (event.data.physicalKey == PhysicalKeyboardKey.arrowDown) {
+                  if (_currentSnakeDirection != SnakeDirection.UP) {
+                    _currentSnakeDirection = SnakeDirection.DOWN;
+                  }
+                }
+                if (event.data.physicalKey == PhysicalKeyboardKey.arrowLeft) {
+                  if (_currentSnakeDirection != SnakeDirection.RIGHT) {
+                    _currentSnakeDirection = SnakeDirection.LEFT;
+                  }
+                }
+                if (event.data.physicalKey == PhysicalKeyboardKey.arrowRight) {
+                  if (_currentSnakeDirection != SnakeDirection.LEFT) {
+                    _currentSnakeDirection = SnakeDirection.RIGHT;
+                  }
+                }
+                if (event.data.physicalKey == PhysicalKeyboardKey.arrowUp) {
+                  if (_currentSnakeDirection != SnakeDirection.DOWN) {
+                    _currentSnakeDirection = SnakeDirection.UP;
+                  }
                 }
               }
             },
@@ -215,12 +419,42 @@ class _MyHomePageState extends State<MyHomePage> {
                   itemCount: _numbersOfTotalSquares,
                   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 30),
                   itemBuilder: (context, index) {
+                    if (_gameOver) {
+                      return Center(
+                        child: Container(
+                          margin: EdgeInsets.all(1.5),
+                          decoration: BoxDecoration(
+                              color: gameOverTextIndexes.contains(index) ? Colors.white : Colors.grey[900], borderRadius: BorderRadius.circular(4)),
+                        ),
+                      );
+                    }
+                    if (index == _foodIndex) {
+                      return Center(
+                        child: Container(
+                          margin: EdgeInsets.all(1.5),
+                          decoration: BoxDecoration(color: Colors.yellow, borderRadius: BorderRadius.circular(4)),
+                        ),
+                      );
+                    }
+                    if (_barrierPositionIndexes.contains(index)) {
+                      return Center(
+                        child: Container(
+                          margin: EdgeInsets.all(1.5),
+                          decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(4)),
+                        ),
+                      );
+                    }
                     if (_snakePositionIndexes.contains(index)) {
                       return Center(
                         child: Container(
                           margin: EdgeInsets.all(1.5),
                           decoration: BoxDecoration(
-                              color: index == _snakePositionIndexes.last ? Colors.pink : Colors.white, borderRadius: BorderRadius.circular(4)),
+                              color: _snakeIsRed
+                                  ? Colors.red
+                                  : index == _snakePositionIndexes.last
+                                      ? Colors.pink
+                                      : Colors.white,
+                              borderRadius: BorderRadius.circular(4)),
                         ),
                       );
                     } else {
@@ -240,6 +474,20 @@ class _MyHomePageState extends State<MyHomePage> {
             child: Center(
               child: Container(
                 height: 600,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    ElevatedButton(
+                      onPressed: () {
+                        _timer.cancel();
+                      },
+                      child: Text('Pause'),
+                      style: ButtonStyle(
+                        backgroundColor: MaterialStateProperty.all(Colors.red),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
